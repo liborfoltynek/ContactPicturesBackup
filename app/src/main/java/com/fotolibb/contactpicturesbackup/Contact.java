@@ -7,6 +7,12 @@ import android.graphics.Bitmap;
  */
 
 public class Contact {
+    public Contact() {
+        HasImage = false;
+    }
+
     public String Id;
     public String Name;
+    public String Phone;
+    public boolean HasImage;
 }

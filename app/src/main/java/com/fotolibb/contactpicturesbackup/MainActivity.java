@@ -3,6 +3,7 @@ package com.fotolibb.contactpicturesbackup;
 import android.Manifest;
 import android.content.ContentProviderOperation;
 import android.content.ContentResolver;
+import android.content.Context;
 import android.content.pm.PackageManager;
 import android.database.Cursor;
 import android.graphics.Bitmap;
@@ -19,12 +20,15 @@ import android.support.v7.app.AppCompatActivity;
 import android.util.Log;
 import android.view.View;
 import android.widget.Button;
+import android.widget.CheckBox;
+import android.widget.ProgressBar;
 import android.widget.TextView;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
+import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
@@ -53,6 +57,10 @@ public class MainActivity extends AppCompatActivity {
             }
         });
 
+        ProgressBar pb = findViewById(R.id.progressBar);
+        pb.setMax(1061);
+        pb.setProgress(0, false);
+
         btn = (Button) findViewById(R.id.btRun);
         btn.setBackgroundColor(Color.GREEN);
         btn.setOnClickListener(new View.OnClickListener() {
@@ -65,9 +73,13 @@ public class MainActivity extends AppCompatActivity {
         askAll();
     }
 
-
     private void run(View view) {
-        task = new DownloadFilesTask().execute(1);
+        if (task == null) {
+
+            CheckBox ch = findViewById(R.id.chbEmptyOnly);
+
+            task = new DownloadFilesTask().execute(ch.isChecked() ? 1 : 0);
+        }
     }
 
     private void btCancelPressed(View view) {
@@ -76,12 +88,15 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    private void setProgressPercent(String a, String p) {
+    private void setProgressPercent(String a, String p, int amount) {
         TextView tvA = findViewById(R.id.tvAction);
         tvA.setText(a);
 
         TextView tvP = findViewById(R.id.tvId);
         tvP.setText(p);
+
+        ProgressBar pb = findViewById(R.id.progressBar);
+        pb.setProgress(amount, true);
     }
 
     private void askAll() {
@@ -104,8 +119,11 @@ public class MainActivity extends AppCompatActivity {
     private class DownloadFilesTask extends AsyncTask<Integer, Integer, Integer> {
         ArrayList<Contact> contacts = new ArrayList();
 
-        protected Integer doInBackground(Integer... urls) {
-            if (LoadContacts()) {
+        protected Integer doInBackground(Integer... par) {
+            if (LoadContacts(par[0] == 1)) {
+
+                WriteContactsToFile();
+
                 ProcessContacts();
             }
             return 100;
@@ -119,19 +137,21 @@ public class MainActivity extends AppCompatActivity {
                 action = "PROCESSING";
             }
             Integer p = progress[0];
-            String prog = format("%d: %s", p, contacts.get(p - 1).Name);
-            setProgressPercent(action, prog);
+            String prog = format("%d: %s", p, contacts.get(p).Name);
+            setProgressPercent(action, prog, contacts.size());
         }
 
         protected void onPostExecute(Integer result) {
-            setProgressPercent("", "Done.");
+            setProgressPercent("", "Done.", 1060);
+            task = null;
         }
 
         protected void onCancelled(Integer result) {
-            setProgressPercent("", "Canceled.");
+            setProgressPercent("", "Canceled.", 0);
+            task = null;
         }
 
-        private boolean LoadContacts() {
+        private boolean LoadContacts(boolean emptyOnly) {
             boolean b = true;
             ContentResolver cr = getContentResolver();
             Cursor cur = cr.query(ContactsContract.Contacts.CONTENT_URI, null, null, null, null);
@@ -153,18 +173,22 @@ public class MainActivity extends AppCompatActivity {
                     }
 
                     Bitmap bmp = getBitmapFromContact(contactPictureUri);
-                    if (bmp != null) {
+                    if (bmp != null && !emptyOnly) {
                         String filename = format("/storage/emulated/0/u/%s.png", name);
                         writeBitmapToFile(bmp, filename);
                     }
 
-                    Contact contact = new Contact();
-                    contact.Name = name;
-                    contact.Id = id;
-                    contacts.add(contact);
+                    if ((emptyOnly && bmp == null) || !emptyOnly) {
+                        Contact contact = new Contact();
+                        contact.Name = name;
+                        contact.Id = id;
+                        contact.Phone = phoneNo;
+                        contact.HasImage = bmp != null;
+                        contacts.add(contact);
+                    }
 
+                    publishProgress(contacts.size() - 1, 0);
                     Log.i(TAG, format("[%s]: %s (%s) <%s>", id, name, phoneNo, contactPictureUri));
-                    publishProgress(contacts.size(), 0);
                 }
             }
             if (cur != null) {
@@ -178,35 +202,38 @@ public class MainActivity extends AppCompatActivity {
             for (Contact c : contacts) {
                 if (isCancelled()) break;
 
-                Log.i(TAG, format("PROCESS: [%s] %s", c.Id, c.Name));
-                String filenameA = format("/storage/emulated/0/u/%s.png", c.Name);
-                String filenameB = format("/storage/emulated/0/users/%s.jpg", c.Name);
-                File fileA = new File(filenameA);
-                File fileB = new File(filenameB);
-                Bitmap bmpA = null;
-                Bitmap bmpB = null;
+                try {
+                    //Log.i(TAG, format("PROCESS: [%s] %s", c.Id, c.Name));
+                    String filenameA = format("/storage/emulated/0/u/%s.png", c.Name);
+                    String filenameB = format("/storage/0000-0000/Pictures/users/%s.png", c.Name);
+                    File fileA = new File(filenameA);
+                    File fileB = new File(filenameB);
+                    Bitmap bmpA = null;
+                    Bitmap bmpB = null;
 
-                if (fileA.exists()) {
-                    bmpA = readBitmapFromFile(filenameA);
-                }
-                if (fileB.exists()) {
-                    bmpB = readBitmapFromFile(filenameB);
-                }
+                    if (fileA.exists()) {
+                        bmpA = readBitmapFromFile(filenameA);
+                    }
+                    if (fileB.exists()) {
+                        bmpB = readBitmapFromFile(filenameB);
+                    }
 
-                if (bmpA != null && bmpB != null) {
+                    if (bmpA != null && bmpB != null) {
+                      //  Log.i(TAG, format("A: %d, B: %d", bmpA.getWidth(), bmpB.getWidth()));
+                        if (bmpA.getWidth() < bmpB.getWidth()) {
+                            Log.i(TAG, format("RESTORE: %s", c.Name));
+                            updateContactPicture(c, bmpB);
+                        }
+                    }
 
-                    Log.i(TAG, format("A: %d, B: %d", bmpA.getWidth(), bmpB.getWidth()));
-
-                    if (bmpA.getWidth() < bmpB.getWidth()) {
-                        Log.i(TAG, format("RESTORE: %s", c.Name));
+                    if (bmpA == null && bmpB != null) {
+                        Log.i(TAG, format("***** INSERT NEW ***** : %s", c.Name));
                         updateContactPicture(c, bmpB);
                     }
+                    publishProgress(counter++, 1);
+                } catch (Exception ex) {
+                    Log.e("EX", ex.getMessage());
                 }
-
-                if (bmpA == null && bmpB != null) {
-                    Log.i(TAG, format("NOCHANCE: %s", c.Name));
-                }
-                publishProgress(counter++, 1);
             }
         }
 
@@ -247,25 +274,35 @@ public class MainActivity extends AppCompatActivity {
         }
 
         private void writeBitmapToFile(Bitmap bmp, String filename) {
+            boolean doWrite = false;
 
             File f = new File(filename);
             if (f.exists()) {
-                f.delete();
+                Bitmap discBmp = readBitmapFromFile(filename);
+                if ((discBmp.getWidth() < bmp.getWidth()) ||
+                        (discBmp.getHeight() < bmp.getHeight())) {
+                    f.delete();
+                    doWrite = true;
+                }
+            } else {
+                doWrite = true;
             }
 
-            FileOutputStream outStream = null;
-            try {
-                outStream = new FileOutputStream(filename);
-                bmp.compress(Bitmap.CompressFormat.PNG, 100, outStream);
-            } catch (Exception e) {
-                e.printStackTrace();
-            } finally {
+            if (doWrite) {
+                FileOutputStream outStream = null;
                 try {
-                    if (outStream != null) {
-                        outStream.close();
-                    }
-                } catch (IOException e) {
+                    outStream = new FileOutputStream(filename);
+                    bmp.compress(Bitmap.CompressFormat.PNG, 100, outStream);
+                } catch (Exception e) {
                     e.printStackTrace();
+                } finally {
+                    try {
+                        if (outStream != null) {
+                            outStream.close();
+                        }
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
                 }
             }
         }
@@ -299,6 +336,21 @@ public class MainActivity extends AppCompatActivity {
             phoneCursor.close();
             return phoneNo;
         }
-    }
 
+        private void WriteContactsToFile() {
+            String fileContents = "";
+            for (Contact c : contacts) {
+                fileContents += String.format("[%s] %s (%s) <%s>\r\n", c.Id, c.Name, c.Phone, c.HasImage ? "A" : "N");
+            }
+
+            String fileName = "/storage/emulated/0/u/log.txt";
+            try {
+                FileWriter out = new FileWriter(new File(fileName));
+                out.write(fileContents);
+                out.close();
+            } catch (IOException e) {
+                Log.e(TAG, e.getMessage());
+            }
+        }
+    }
 }
