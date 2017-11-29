@@ -12,6 +12,7 @@ import android.graphics.Color;
 import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Bundle;
+import android.os.PowerManager;
 import android.provider.ContactsContract;
 import android.support.annotation.NonNull;
 import android.support.v4.app.ActivityCompat;
@@ -19,6 +20,7 @@ import android.support.v4.content.ContextCompat;
 import android.support.v7.app.AppCompatActivity;
 import android.util.Log;
 import android.view.View;
+import android.view.WindowManager;
 import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.ProgressBar;
@@ -41,7 +43,6 @@ public class MainActivity extends AppCompatActivity {
             {ContactsContract.Contacts._ID, ContactsContract.Contacts.DISPLAY_NAME, ContactsContract.Contacts.PHOTO_URI};
     String TAG = "CONTACTS";
     private AsyncTask task = null;
-
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -75,9 +76,8 @@ public class MainActivity extends AppCompatActivity {
 
     private void run(View view) {
         if (task == null) {
-
+            getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
             CheckBox ch = findViewById(R.id.chbEmptyOnly);
-
             task = new DownloadFilesTask().execute(ch.isChecked() ? 1 : 0);
         }
     }
@@ -143,6 +143,7 @@ public class MainActivity extends AppCompatActivity {
 
         protected void onPostExecute(Integer result) {
             setProgressPercent("", "Done.", 1060);
+            getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
             task = null;
         }
 
@@ -230,7 +231,8 @@ public class MainActivity extends AppCompatActivity {
                         Log.i(TAG, format("***** INSERT NEW ***** : %s", c.Name));
                         updateContactPicture(c, bmpB);
                     }
-                    publishProgress(counter++, 1);
+                    publishProgress(counter, 1);
+                    counter = counter + 1;
                 } catch (Exception ex) {
                     Log.e("EX", ex.getMessage());
                 }
@@ -339,8 +341,10 @@ public class MainActivity extends AppCompatActivity {
 
         private void WriteContactsToFile() {
             String fileContents = "";
+            int progress = 0;
             for (Contact c : contacts) {
                 fileContents += String.format("[%s] %s (%s) <%s>\r\n", c.Id, c.Name, c.Phone, c.HasImage ? "A" : "N");
+                publishProgress(progress++, 0);
             }
 
             String fileName = "/storage/emulated/0/u/log.txt";
